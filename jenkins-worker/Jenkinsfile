@@ -1,0 +1,36 @@
+pipeline {
+    agent {
+        kubernetes {
+            cloud 'kubernetes'
+            namespace 'jenkins-workers'
+
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: jnlp
+      image: jenkins/inbound-agent:latest
+      args: ['$(JENKINS_SECRET)', '$(JENKINS_NAME)']
+      '''
+        }
+    }
+
+    stages {
+        stage('Verify Agent') {
+            steps {
+                sh '''
+                    echo "Hello from Kubernetes Agent!"
+                    echo "Agent hostname: $(hostname)"
+                    echo "Namespace: jenkins-workers"
+                '''
+            }
+        }
+
+        stage('Check Kubernetes') {
+            steps {
+                sh 'echo "Running build inside worker pod"'
+            }
+        }
+    }
+}
