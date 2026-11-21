@@ -2,7 +2,7 @@ pipeline {
     agent {
         label 'built-in'
     }
-    tools {}
+    //tools {}
     options {
         ansi('xterm') // for color formatting
         timeout(time: 30, unit: 'MINUTES')
@@ -12,7 +12,7 @@ pipeline {
         skipStagesAfterUnstable ()
         // lock(resource: defineLockKey()) // NEED TO LEARN THIS PROPERLY
     }
-    environment {}
+    //environment {}
 
     // most important 
     stages {
