@@ -4,7 +4,7 @@ pipeline {
     }
     //tools {}
     options {
-        ansi('xterm') // for color formatting
+        ansiColor ('xterm') // for color formatting
         timeout(time: 30, unit: 'MINUTES')
         timestamps()
         buildDiscarder(logRotator(numToKeepStr: '30')) // only keeps the latest 30 builds and allow jenkins to discard older ones 
