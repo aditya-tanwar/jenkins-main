@@ -25,8 +25,9 @@ pipeline {
         
         stage('Stage 2') {
             steps{
-                script {}
+                script {
                 sh 'whoami'
+            }
             }
         }
     }
