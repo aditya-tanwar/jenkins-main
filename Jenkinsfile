@@ -16,12 +16,12 @@ pipeline {
 
     // most important 
     stages {
-        stage('Stage 1') {
-            steps{
-                echo 'Docker Version'
-                sh 'docker --version'
-                }
-            }
+        // stage('Stage 1') {
+        //     steps{
+        //         echo 'Docker Version'
+        //         sh 'docker --version'
+        //         }
+        //     }
         
         stage('Stage 2') {
             steps{
