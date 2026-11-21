@@ -33,9 +33,7 @@ pipeline {
         //             steps {}
         //         }
         //     }
-
         // }
-    }
     // post {
     //     always {}
     //     success {}
