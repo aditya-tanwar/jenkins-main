@@ -23,6 +23,12 @@ pipeline {
                 }
             }
         }
+        stage('Stage 2'){
+            steps{
+                script {}
+                sh 'whoami'
+            }
+        }
         // stage('Parallel Tests'){
         //     failFast True // Aborts remaining parallel branches if one fails 
         //     parallel{
