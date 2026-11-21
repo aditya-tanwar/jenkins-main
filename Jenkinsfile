@@ -27,6 +27,7 @@ pipeline {
             steps{
                 script {
                 sh 'whoami'
+                sh 'hostname'
             }
             }
         }
