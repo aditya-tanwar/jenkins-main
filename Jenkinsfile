@@ -2,8 +2,9 @@ pipeline {
     agent {
         kubernetes {
             cloud 'kubernetes'
-            namespace 'jenkins-workers'
-            yamlFile 'jenkins-agents/agent-1.yaml' // calling the jenkins agent pod yaml 
+            inheritFrom 'base-agent'
+            //namespace 'jenkins-workers'
+            //yamlFile 'jenkins-agents/agent-1.yaml' // calling the jenkins agent pod yaml 
         }
     }
     //tools {}
