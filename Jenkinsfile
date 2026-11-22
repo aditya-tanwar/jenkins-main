@@ -37,6 +37,7 @@ pipeline {
                 script {
                 sh 'whoami'
                 sh 'hostname'
+                sh 'terraform --version'
             }
             }
         }
