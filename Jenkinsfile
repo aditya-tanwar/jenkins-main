@@ -19,7 +19,7 @@ pipeline {
         DIGEST_FILE = 'image-digest.txt'
         SBOM_FILE = 'sbom.cdx.json'
         SLSA_FILE = 'slsa-provenance.json'
-        STORAGE_DRIVER = 'vfs'
+        IMAGE_ARCHIVE = 'image.tar'
         REGISTRY_AUTH_FILE = "${WORKSPACE}/.docker/config.json"
     }
 
@@ -44,7 +44,41 @@ pipeline {
             }
         }
 
-        stage('Build & Push Sample App (Podman)') {
+        stage('Build Local Image (Podman)') {
+            steps {
+                sh '''
+                    set -euo pipefail
+
+                    export CONTAINERS_STORAGE_CONF=$(mktemp)
+                    printf '[storage]\ndriver = "vfs"\nrunroot = "/tmp/containers-runroot"\ngraphroot = "/tmp/containers-graphroot"\n' > "$CONTAINERS_STORAGE_CONF"
+                    trap 'rm -f "$CONTAINERS_STORAGE_CONF"' EXIT
+
+                    podman build \
+                        --isolation=chroot \
+                        --network=host \
+                        --layers \
+                        -f "$WORKSPACE/sample-app/Dockerfile" \
+                        -t "${APP_REPO}:${IMAGE_TAG}" \
+                        -t "${APP_REPO}:latest" \
+                        "$WORKSPACE/sample-app"
+
+                    # Export locally as an OCI archive so Syft can scan before pushing
+                    podman save --format oci-archive -o "$WORKSPACE/${IMAGE_ARCHIVE}" "${APP_REPO}:${IMAGE_TAG}"
+                '''
+            }
+        }
+
+        stage('SBOM & Vulnerability Scan') {
+            steps {
+                sh '''
+                    set -euo pipefail
+                    syft "oci-archive:$WORKSPACE/${IMAGE_ARCHIVE}" -o cyclonedx-json > "${SBOM_FILE}"
+                    grype "sbom:${SBOM_FILE}" --fail-on high --only-fixed
+                '''
+            }
+        }
+
+        stage('Push Image & Capture Digest') {
             steps {
                 withCredentials([
                     usernamePassword(
@@ -59,24 +93,15 @@ pipeline {
 
                         export CONTAINERS_STORAGE_CONF=$(mktemp)
                         printf '[storage]\ndriver = "vfs"\nrunroot = "/tmp/containers-runroot"\ngraphroot = "/tmp/containers-graphroot"\n' > "$CONTAINERS_STORAGE_CONF"
+                        trap 'rm -f "$CONTAINERS_STORAGE_CONF"' EXIT
 
                         mkdir -p "$(dirname "$REGISTRY_AUTH_FILE")"
                         printf '{}' > "$REGISTRY_AUTH_FILE"
-                        trap 'rm -f "$CONTAINERS_STORAGE_CONF"' EXIT
 
                         printf '%s' "$DOCKER_TOKEN" | podman login \
                             --username "$DOCKER_USER" \
                             --password-stdin \
                             docker.io
-
-                        podman build \
-                            --isolation=chroot \
-                            --network=host \
-                            --layers \
-                            -f "$WORKSPACE/sample-app/Dockerfile" \
-                            -t "${APP_REPO}:${IMAGE_TAG}" \
-                            -t "${APP_REPO}:latest" \
-                            "$WORKSPACE/sample-app"
 
                         # Push immutable tag and capture its sha256 digest into DIGEST_FILE
                         podman push \
@@ -85,7 +110,6 @@ pipeline {
 
                         podman push "${APP_REPO}:latest"
                     '''
-
                 }
 
                 script {
@@ -97,16 +121,6 @@ pipeline {
                     env.IMAGE_REF = "${env.APP_REPO}@${env.IMAGE_DIGEST}"
                     echo "Immutable image: ${env.IMAGE_REF}"
                 }
-            }
-        }
-
-        stage('SBOM & Vulnerability Scan') {
-            steps {
-                sh '''
-                    set -euo pipefail
-                    syft "registry:${IMAGE_REF}" -o cyclonedx-json > "${SBOM_FILE}"
-                    grype "sbom:${SBOM_FILE}" --fail-on high
-                '''
             }
         }
 
@@ -191,7 +205,7 @@ EOF
         }
         cleanup {
             script {
-                ['.docker', 'rendered-sample-app.yaml', env.DIGEST_FILE].each { relPath ->
+                ['.docker', 'rendered-sample-app.yaml', env.DIGEST_FILE, env.IMAGE_ARCHIVE].each { relPath ->
                     def target = new File("${env.WORKSPACE}/${relPath}")
                     if (target.exists()) {
                         if (target.isDirectory()) {
