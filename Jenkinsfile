@@ -35,7 +35,7 @@ pipeline {
                 sh '''
                     whoami
                     hostname
-                    buildah --version
+                    podman --version
                     syft version
                     grype version
                     cosign version
@@ -44,7 +44,7 @@ pipeline {
             }
         }
 
-        stage('Build & Push Sample App (Buildah)') {
+        stage('Build & Push Sample App (Podman)') {
             steps {
                 withCredentials([
                     usernamePassword(
@@ -60,12 +60,12 @@ pipeline {
                         mkdir -p "$(dirname "$REGISTRY_AUTH_FILE")"
                         printf '{}' > "$REGISTRY_AUTH_FILE"
 
-                        printf '%s' "$DOCKER_TOKEN" | buildah login \
+                        printf '%s' "$DOCKER_TOKEN" | podman login \
                             --username "$DOCKER_USER" \
                             --password-stdin \
                             docker.io
 
-                        buildah bud \
+                        podman build \
                             --isolation=chroot \
                             --network=host \
                             --storage-driver=vfs \
@@ -76,11 +76,14 @@ pipeline {
                             "$WORKSPACE/sample-app"
 
                         # Push immutable tag and capture its sha256 digest into DIGEST_FILE
-                        buildah push \
+                        podman push \
+                            --storage-driver=vfs \
                             --digestfile="$WORKSPACE/${DIGEST_FILE}" \
                             "${APP_REPO}:${IMAGE_TAG}"
 
-                        buildah push "${APP_REPO}:latest"
+                        podman push \
+                            --storage-driver=vfs \
+                            "${APP_REPO}:latest"
                     '''
                 }
 
