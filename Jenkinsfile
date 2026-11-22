@@ -44,30 +44,32 @@ pipeline {
 
         stage('Build & Push Sample App (Kaniko)') {
             steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: "${DOCKERHUB_CREDENTIALS}",
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_TOKEN'
-                    )
-                ]) {
-                    sh '''
-                        set -euo pipefail
-                        export DOCKER_CONFIG="$WORKSPACE/.docker"
-                        mkdir -p "$DOCKER_CONFIG"
-                        AUTH=$(printf '%s' "$DOCKER_USER:$DOCKER_TOKEN" | base64 | tr -d '\\n')
-                        printf '{"auths":{"https://index.docker.io/v1/":{"username":"%s","password":"%s","auth":"%s"}}}' \
-                            "$DOCKER_USER" "$DOCKER_TOKEN" "$AUTH" \
-                            > "$DOCKER_CONFIG/config.json"
+                container('kaniko') {
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: "${DOCKERHUB_CREDENTIALS}",
+                            usernameVariable: 'DOCKER_USER',
+                            passwordVariable: 'DOCKER_TOKEN'
+                        )
+                    ]) {
+                        sh '''
+                            set -euo pipefail
+                            export DOCKER_CONFIG="$WORKSPACE/.docker"
+                            mkdir -p "$DOCKER_CONFIG"
+                            AUTH=$(printf '%s' "$DOCKER_USER:$DOCKER_TOKEN" | base64 | tr -d '\\n')
+                            printf '{"auths":{"https://index.docker.io/v1/":{"username":"%s","password":"%s","auth":"%s"}}}' \
+                                "$DOCKER_USER" "$DOCKER_TOKEN" "$AUTH" \
+                                > "$DOCKER_CONFIG/config.json"
 
-                        kaniko \
-                            --context="$WORKSPACE/sample-app" \
-                            --dockerfile="$WORKSPACE/sample-app/Dockerfile" \
-                            --destination="${APP_REPO}:latest" \
-                            --destination="${APP_REPO}:${IMAGE_TAG}" \
-                            --digest-file="$WORKSPACE/${DIGEST_FILE}" \
-                            --cache=true
-                    '''
+                            kaniko \
+                                --context="$WORKSPACE/sample-app" \
+                                --dockerfile="$WORKSPACE/sample-app/Dockerfile" \
+                                --destination="${APP_REPO}:latest" \
+                                --destination="${APP_REPO}:${IMAGE_TAG}" \
+                                --digest-file="$WORKSPACE/${DIGEST_FILE}" \
+                                --cache=true
+                        '''
+                    }
                 }
 
                 script {
