@@ -171,9 +171,18 @@ EOF
             archiveArtifacts artifacts: "${SBOM_FILE},${SLSA_FILE}", allowEmptyArchive: true
         }
         cleanup {
-            sh '''
-                rm -rf "$WORKSPACE/.docker" rendered-sample-app.yaml || true
-            '''
+            script {
+                ['.docker', 'rendered-sample-app.yaml'].each { relPath ->
+                    def target = new File("${env.WORKSPACE}/${relPath}")
+                    if (target.exists()) {
+                        if (target.isDirectory()) {
+                            target.deleteDir()
+                        } else {
+                            target.delete()
+                        }
+                    }
+                }
+            }
         }
     }
 }
