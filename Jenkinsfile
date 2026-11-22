@@ -35,7 +35,7 @@ pipeline {
                 sh '''
                     whoami
                     hostname
-                    /kaniko/executor version
+                    kaniko version
                     syft version
                     grype version
                     cosign version
