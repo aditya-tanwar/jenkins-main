@@ -66,6 +66,8 @@ pipeline {
                             docker.io
 
                         buildah bud \
+                            --network=host \
+                            --storage-driver=vfs \
                             --layers \
                             -f "$WORKSPACE/sample-app/Dockerfile" \
                             -t "${APP_REPO}:${IMAGE_TAG}" \
