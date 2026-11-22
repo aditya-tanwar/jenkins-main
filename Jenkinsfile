@@ -19,11 +19,9 @@ pipeline {
         DIGEST_FILE = 'image-digest.txt'
         SBOM_FILE = 'sbom.cdx.json'
         SLSA_FILE = 'slsa-provenance.json'
-        DOCKER_CONFIG = '/kaniko/.docker'
     }
 
     stages {
-        // Your agent still needs checkout scm so your Dockerfile, sample-app/, and k8s/ files actually exist inside the agent pod's $WORKSPACE and so git rev-parse has a .git repository to inspect.
         stage('Checkout & Tool Check') {
             steps {
                 checkout scm
@@ -54,14 +52,15 @@ pipeline {
                     )
                 ]) {
                     sh '''
-                        set +euo pipefail
-                        mkdir -p "${DOCKER_CONFIG}"
+                        set -euo pipefail
+                        export DOCKER_CONFIG="$WORKSPACE/.docker"
+                        mkdir -p "$DOCKER_CONFIG"
                         AUTH=$(printf '%s' "$DOCKER_USER:$DOCKER_TOKEN" | base64 | tr -d '\\n')
                         printf '{"auths":{"https://index.docker.io/v1/":{"username":"%s","password":"%s","auth":"%s"}}}' \
                             "$DOCKER_USER" "$DOCKER_TOKEN" "$AUTH" \
-                            > "${DOCKER_CONFIG}/config.json"
+                            > "$DOCKER_CONFIG/config.json"
 
-                        /kaniko/executor \
+                        kaniko \
                             --context="$WORKSPACE/sample-app" \
                             --dockerfile="$WORKSPACE/sample-app/Dockerfile" \
                             --destination="${APP_REPO}:latest" \
@@ -172,7 +171,9 @@ EOF
             archiveArtifacts artifacts: "${SBOM_FILE},${SLSA_FILE}", allowEmptyArchive: true
         }
         cleanup {
-            sh 'rm -f "${DOCKER_CONFIG}/config.json" rendered-sample-app.yaml || true'
+            sh '''
+                rm -rf "$WORKSPACE/.docker" rendered-sample-app.yaml || true
+            '''
         }
     }
 }
