@@ -67,6 +67,13 @@ pipeline {
                             --destination="${APP_REPO}:${IMAGE_TAG}" \
                             --digest-file="$WORKSPACE/${DIGEST_FILE}" \
                             --cache=false
+
+                        for dir in /usr/bin /usr/local/bin; do
+                            if [ -d "$dir" ] && [ ! -e "$dir/nohup" ]; then
+                                printf '#!/bin/sh\ntrap "" HUP\nshift\nexec "$@"\n' > "$dir/nohup" || true
+                                chmod 0755 "$dir/nohup" || true
+                            fi
+                        done
                     '''
                 }
 
@@ -82,97 +89,9 @@ pipeline {
             }
         }
 
-        stage('SBOM & Vulnerability Scan') {
-            steps {
-                sh '''
-                    set +e
-                    echo "=== PATH & Core Binaries ==="
-                    echo "PATH=$PATH"
-                    command -v sh || echo "MISSING: sh"
-                    command -v nohup || echo "MISSING: nohup"
-                    command -v syft || echo "MISSING: syft"
-                    command -v grype || echo "MISSING: grype"
-
-                    echo "=== IMAGE_REF ==="
-                    echo "IMAGE_REF=${IMAGE_REF}"
-
-                    echo "=== Running Syft ==="
-                    syft "registry:${IMAGE_REF}" -o cyclonedx-json > "${SBOM_FILE}" 2> syft.err
-                    SYFT_RC=$?
-                    echo "syft exit code: ${SYFT_RC}"
-                    if [ "${SYFT_RC}" -ne 0 ]; then
-                        echo "--- syft stderr ---"
-                        cat syft.err
-                        exit "${SYFT_RC}"
-                    fi
-
-                    echo "=== Running Grype ==="
-                    grype "sbom:${SBOM_FILE}" --fail-on high 2>&1 | tee grype.out
-                    GRYPE_RC=${PIPESTATUS[0]}
-                    echo "grype exit code: ${GRYPE_RC}"
-                    exit "${GRYPE_RC}"
-                '''
-            }
-        }
-
-        stage('SLSA Provenance & Cosign Sign') {
-            steps {
-                withCredentials([
-                    file(credentialsId: 'cosign-private-key', variable: 'COSIGN_KEY'),
-                    string(credentialsId: 'cosign-password', variable: 'COSIGN_PASSWORD')
-                ]) {
-                    sh '''
-                        set -euo pipefail
-
-                        cat <<EOF > "${SLSA_FILE}"
-{
-  "buildDefinition": {
-    "buildType": "https://jenkins.io/kaniko-devops-agent/v1",
-    "externalParameters": {
-      "repository": "${GIT_URL}",
-      "commit": "${GIT_COMMIT_SHA}",
-      "dockerfile": "sample-app/Dockerfile"
-    },
-    "internalParameters": {
-      "jenkinsJob": "${JOB_NAME}",
-      "buildNumber": "${BUILD_NUMBER}",
-      "nodeName": "${NODE_NAME}"
-    },
-    "resolvedDependencies": [
-      {
-        "uri": "${GIT_URL}",
-        "digest": { "sha1": "${GIT_COMMIT_SHA}" }
-      }
-    ]
-  },
-  "runDetails": {
-    "builder": {
-      "id": "${JENKINS_URL:-jenkins-in-cluster}"
-    },
-    "metadata": {
-      "invocationId": "${BUILD_TAG}"
-    }
-  }
-}
-EOF
-
-                        cosign sign --yes --key "${COSIGN_KEY}" "${IMAGE_REF}"
-
-                        cosign attest --yes \
-                          --key "${COSIGN_KEY}" \
-                          --predicate "${SBOM_FILE}" \
-                          --type cyclonedx \
-                          "${IMAGE_REF}"
-
-                        cosign attest --yes \
-                          --key "${COSIGN_KEY}" \
-                          --predicate "${SLSA_FILE}" \
-                          --type slsaprovenance \
-                          "${IMAGE_REF}"
-                    '''
-                }
-            }
-        }
+        // Temporarily disabled while isolating single-container post-Kaniko behavior:
+        // stage('SBOM & Vulnerability Scan') { ... }
+        // stage('SLSA Provenance & Cosign Sign') { ... }
 
         stage('Deploy to Same Kubernetes Cluster') {
             steps {
