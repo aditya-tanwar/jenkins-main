@@ -66,7 +66,7 @@ pipeline {
                             --destination="${APP_REPO}:latest" \
                             --destination="${APP_REPO}:${IMAGE_TAG}" \
                             --digest-file="$WORKSPACE/${DIGEST_FILE}" \
-                            --cache=true
+                            --cache=false
                     '''
                 }
 
