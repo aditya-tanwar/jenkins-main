@@ -85,9 +85,32 @@ pipeline {
         stage('SBOM & Vulnerability Scan') {
             steps {
                 sh '''
-                    set -euo pipefail
-                    syft "registry:${IMAGE_REF}" -o cyclonedx-json > "${SBOM_FILE}"
-                    grype "sbom:${SBOM_FILE}" --fail-on high
+                    set +e
+                    echo "=== PATH & Core Binaries ==="
+                    echo "PATH=$PATH"
+                    command -v sh || echo "MISSING: sh"
+                    command -v nohup || echo "MISSING: nohup"
+                    command -v syft || echo "MISSING: syft"
+                    command -v grype || echo "MISSING: grype"
+
+                    echo "=== IMAGE_REF ==="
+                    echo "IMAGE_REF=${IMAGE_REF}"
+
+                    echo "=== Running Syft ==="
+                    syft "registry:${IMAGE_REF}" -o cyclonedx-json > "${SBOM_FILE}" 2> syft.err
+                    SYFT_RC=$?
+                    echo "syft exit code: ${SYFT_RC}"
+                    if [ "${SYFT_RC}" -ne 0 ]; then
+                        echo "--- syft stderr ---"
+                        cat syft.err
+                        exit "${SYFT_RC}"
+                    fi
+
+                    echo "=== Running Grype ==="
+                    grype "sbom:${SBOM_FILE}" --fail-on high 2>&1 | tee grype.out
+                    GRYPE_RC=${PIPESTATUS[0]}
+                    echo "grype exit code: ${GRYPE_RC}"
+                    exit "${GRYPE_RC}"
                 '''
             }
         }
