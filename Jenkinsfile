@@ -66,6 +66,7 @@ pipeline {
                             docker.io
 
                         buildah bud \
+                            --isolation=chroot \
                             --network=host \
                             --storage-driver=vfs \
                             --layers \
