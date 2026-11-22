@@ -96,12 +96,24 @@ pipeline {
         stage('Deploy to Same Kubernetes Cluster') {
             steps {
                 sh '''
-                    set -euo pipefail
+                    set +e
+                    echo "=== Checking deploy tools ==="
+                    command -v kubectl || echo "MISSING: kubectl"
+                    command -v sed || echo "MISSING: sed"
+                    echo "IMAGE_REF=${IMAGE_REF:-<unset>}"
+
                     kubectl create namespace "${APP_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+                    RC=$?; [ "$RC" -ne 0 ] && { echo "Failed namespace apply (rc=$RC)"; exit "$RC"; }
 
                     sed "s|PLACEHOLDER_IMAGE_REF|${IMAGE_REF}|g" k8s/sample-app.yaml > rendered-sample-app.yaml
+                    RC=$?; [ "$RC" -ne 0 ] && { echo "Failed sed render (rc=$RC)"; exit "$RC"; }
+
                     kubectl apply -f rendered-sample-app.yaml
+                    RC=$?; [ "$RC" -ne 0 ] && { echo "Failed kubectl apply (rc=$RC)"; exit "$RC"; }
+
                     kubectl rollout status deployment/sample-app -n "${APP_NAMESPACE}" --timeout=120s
+                    RC=$?; [ "$RC" -ne 0 ] && { echo "Rollout failed (rc=$RC)"; exit "$RC"; }
+
                     kubectl get pods,svc -n "${APP_NAMESPACE}"
                 '''
             }
