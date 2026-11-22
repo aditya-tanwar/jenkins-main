@@ -19,6 +19,8 @@ pipeline {
         DIGEST_FILE = 'image-digest.txt'
         SBOM_FILE = 'sbom.cdx.json'
         SLSA_FILE = 'slsa-provenance.json'
+        STORAGE_DRIVER = 'vfs'
+        REGISTRY_AUTH_FILE = "${WORKSPACE}/.docker/config.json"
     }
 
     stages {
@@ -33,7 +35,7 @@ pipeline {
                 sh '''
                     whoami
                     hostname
-                    kaniko version
+                    buildah --version
                     syft version
                     grype version
                     cosign version
@@ -42,7 +44,7 @@ pipeline {
             }
         }
 
-        stage('Build & Push Sample App (Kaniko)') {
+        stage('Build & Push Sample App (Buildah)') {
             steps {
                 withCredentials([
                     usernamePassword(
@@ -53,27 +55,29 @@ pipeline {
                 ]) {
                     sh '''
                         set -euo pipefail
-                        export DOCKER_CONFIG="$WORKSPACE/.docker"
-                        mkdir -p "$DOCKER_CONFIG"
-                        AUTH=$(printf '%s' "$DOCKER_USER:$DOCKER_TOKEN" | base64 | tr -d '\\n')
-                        printf '{"auths":{"https://index.docker.io/v1/":{"username":"%s","password":"%s","auth":"%s"}}}' \
-                            "$DOCKER_USER" "$DOCKER_TOKEN" "$AUTH" \
-                            > "$DOCKER_CONFIG/config.json"
+                        set +x
 
-                        kaniko \
-                            --context="$WORKSPACE/sample-app" \
-                            --dockerfile="$WORKSPACE/sample-app/Dockerfile" \
-                            --destination="${APP_REPO}:latest" \
-                            --destination="${APP_REPO}:${IMAGE_TAG}" \
-                            --digest-file="$WORKSPACE/${DIGEST_FILE}" \
-                            --cache=false
+                        mkdir -p "$(dirname "$REGISTRY_AUTH_FILE")"
+                        printf '{}' > "$REGISTRY_AUTH_FILE"
 
-                        for dir in /usr/bin /usr/local/bin; do
-                            if [ -d "$dir" ] && [ ! -e "$dir/nohup" ]; then
-                                printf '#!/bin/sh\ntrap "" HUP\nshift\nexec "$@"\n' > "$dir/nohup" || true
-                                chmod 0755 "$dir/nohup" || true
-                            fi
-                        done
+                        printf '%s' "$DOCKER_TOKEN" | buildah login \
+                            --username "$DOCKER_USER" \
+                            --password-stdin \
+                            docker.io
+
+                        buildah bud \
+                            --layers \
+                            -f "$WORKSPACE/sample-app/Dockerfile" \
+                            -t "${APP_REPO}:${IMAGE_TAG}" \
+                            -t "${APP_REPO}:latest" \
+                            "$WORKSPACE/sample-app"
+
+                        # Push immutable tag and capture its sha256 digest into DIGEST_FILE
+                        buildah push \
+                            --digestfile="$WORKSPACE/${DIGEST_FILE}" \
+                            "${APP_REPO}:${IMAGE_TAG}"
+
+                        buildah push "${APP_REPO}:latest"
                     '''
                 }
 
@@ -89,43 +93,108 @@ pipeline {
             }
         }
 
-        // Temporarily disabled while isolating single-container post-Kaniko behavior:
-        // stage('SBOM & Vulnerability Scan') { ... }
-        // stage('SLSA Provenance & Cosign Sign') { ... }
-
-        stage('Deploy to Same Kubernetes Cluster') {
+        stage('SBOM & Vulnerability Scan') {
             steps {
-                withCredentials([string(credentialsId: 'kubeconfig-creds', variable: 'KUBECONFIG_CONTENT')]) {
+                sh '''
+                    set -euo pipefail
+                    syft "registry:${IMAGE_REF}" -o cyclonedx-json > "${SBOM_FILE}"
+                    grype "sbom:${SBOM_FILE}" --fail-on high
+                '''
+            }
+        }
+
+        stage('SLSA Provenance & Cosign Sign') {
+            steps {
+                withCredentials([
+                    file(credentialsId: 'cosign-private-key', variable: 'COSIGN_KEY'),
+                    string(credentialsId: 'cosign-password', variable: 'COSIGN_PASSWORD')
+                ]) {
                     sh '''
-                        set +e
-                        echo "=== Checking deploy tools ==="
-                        command -v kubectl || echo "MISSING: kubectl"
-                        command -v sed || echo "MISSING: sed"
-                        echo "IMAGE_REF=${IMAGE_REF:-<unset>}"
+                        set -euo pipefail
+                        export DOCKER_CONFIG="$(dirname "$REGISTRY_AUTH_FILE")"
 
-                        mkdir -p "$WORKSPACE/.kube"
-                        printf '%s\n' "$KUBECONFIG_CONTENT" > "$WORKSPACE/.kube/config"
-                        chmod 0600 "$WORKSPACE/.kube/config"
-                        export KUBECONFIG="$WORKSPACE/.kube/config"
+                        cat <<EOF > "${SLSA_FILE}"
+{
+  "buildDefinition": {
+    "buildType": "https://jenkins.io",
+    "externalParameters": {
+      "repository": "${GIT_URL}",
+      "commit": "${GIT_COMMIT_SHA}",
+      "dockerfile": "sample-app/Dockerfile"
+    },
+    "internalParameters": {
+      "jenkinsJob": "${JOB_NAME}",
+      "buildNumber": "${BUILD_NUMBER}",
+      "nodeName": "${NODE_NAME}"
+    },
+    "resolvedDependencies": [
+      {
+        "uri": "${GIT_URL}",
+        "digest": { "sha1": "${GIT_COMMIT_SHA}" }
+      }
+    ]
+  },
+  "runDetails": {
+    "builder": {
+      "id": "${JENKINS_URL:-jenkins-in-cluster}"
+    },
+    "metadata": {
+      "invocationId": "${BUILD_TAG}"
+    }
+  }
+}
+EOF
 
-                        kubectl create namespace "${APP_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
-                        RC=$?; [ "$RC" -ne 0 ] && { echo "Failed namespace apply (rc=$RC)"; rm -rf "$WORKSPACE/.kube"; exit "$RC"; }
+                        cosign sign --yes --key "${COSIGN_KEY}" "${IMAGE_REF}"
 
-                        sed "s|PLACEHOLDER_IMAGE_REF|${IMAGE_REF}|g" k8s/sample-app.yaml > rendered-sample-app.yaml
-                        RC=$?; [ "$RC" -ne 0 ] && { echo "Failed sed render (rc=$RC)"; rm -rf "$WORKSPACE/.kube"; exit "$RC"; }
+                        cosign attest --yes \
+                          --key "${COSIGN_KEY}" \
+                          --predicate "${SBOM_FILE}" \
+                          --type cyclonedx \
+                          "${IMAGE_REF}"
 
-                        kubectl apply -f rendered-sample-app.yaml
-                        RC=$?; [ "$RC" -ne 0 ] && { echo "Failed kubectl apply (rc=$RC)"; rm -rf "$WORKSPACE/.kube"; exit "$RC"; }
-
-                        kubectl rollout status deployment/sample-app -n "${APP_NAMESPACE}" --timeout=120s
-                        RC=$?; [ "$RC" -ne 0 ] && { echo "Rollout failed (rc=$RC)"; rm -rf "$WORKSPACE/.kube"; exit "$RC"; }
-
-                        kubectl get pods,svc -n "${APP_NAMESPACE}"
-                        rm -rf "$WORKSPACE/.kube"
+                        cosign attest --yes \
+                          --key "${COSIGN_KEY}" \
+                          --predicate "${SLSA_FILE}" \
+                          --type slsaprovenance \
+                          "${IMAGE_REF}"
                     '''
                 }
             }
         }
+
+        stage('Deploy to Same Kubernetes Cluster') {
+            steps {
+                sh '''
+                    set -euo pipefail
+                    kubectl create namespace "${APP_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+
+                    sed "s|PLACEHOLDER_IMAGE_REF|${IMAGE_REF}|g" k8s/sample-app.yaml > rendered-sample-app.yaml
+                    kubectl apply -f rendered-sample-app.yaml
+                    kubectl rollout status deployment/sample-app -n "${APP_NAMESPACE}" --timeout=120s
+                    kubectl get pods,svc -n "${APP_NAMESPACE}"
+                '''
+            }
+        }
     }
 
+    post {
+        always {
+            archiveArtifacts artifacts: "${SBOM_FILE},${SLSA_FILE}", allowEmptyArchive: true
+        }
+        cleanup {
+            script {
+                ['.docker', 'rendered-sample-app.yaml', env.DIGEST_FILE].each { relPath ->
+                    def target = new File("${env.WORKSPACE}/${relPath}")
+                    if (target.exists()) {
+                        if (target.isDirectory()) {
+                            target.deleteDir()
+                        } else {
+                            target.delete()
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
