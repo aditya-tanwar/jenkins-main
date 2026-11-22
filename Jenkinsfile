@@ -57,8 +57,12 @@ pipeline {
                         set -euo pipefail
                         set +x
 
+                        export CONTAINERS_STORAGE_CONF=$(mktemp)
+                        printf '[storage]\ndriver = "vfs"\nrunroot = "/tmp/containers-runroot"\ngraphroot = "/tmp/containers-graphroot"\n' > "$CONTAINERS_STORAGE_CONF"
+
                         mkdir -p "$(dirname "$REGISTRY_AUTH_FILE")"
                         printf '{}' > "$REGISTRY_AUTH_FILE"
+                        trap 'rm -f "$CONTAINERS_STORAGE_CONF"' EXIT
 
                         printf '%s' "$DOCKER_TOKEN" | podman login \
                             --username "$DOCKER_USER" \
@@ -68,7 +72,6 @@ pipeline {
                         podman build \
                             --isolation=chroot \
                             --network=host \
-                            --storage-driver=vfs \
                             --layers \
                             -f "$WORKSPACE/sample-app/Dockerfile" \
                             -t "${APP_REPO}:${IMAGE_TAG}" \
@@ -77,14 +80,12 @@ pipeline {
 
                         # Push immutable tag and capture its sha256 digest into DIGEST_FILE
                         podman push \
-                            --storage-driver=vfs \
                             --digestfile="$WORKSPACE/${DIGEST_FILE}" \
                             "${APP_REPO}:${IMAGE_TAG}"
 
-                        podman push \
-                            --storage-driver=vfs \
-                            "${APP_REPO}:latest"
+                        podman push "${APP_REPO}:latest"
                     '''
+
                 }
 
                 script {
