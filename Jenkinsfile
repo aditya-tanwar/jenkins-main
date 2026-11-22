@@ -1,6 +1,9 @@
 pipeline {
     agent {
         label 'docker'
+
+        //or 
+
         // kubernetes {
         //     cloud 'kubernetes'
         //     inheritFrom 'base-agent'
