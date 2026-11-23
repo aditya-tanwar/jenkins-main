@@ -77,6 +77,16 @@ pipeline {
                 }
             }
         }
+        stage('Check App Status in k8s') {
+            steps {
+                script{
+                k8sdeploy.checkSameK8sStatus(
+                    namespace: 'demo-app',
+                    deployment: 'sample-app'
+                )
+                }
+            }
+        }
     }
 
     post {
