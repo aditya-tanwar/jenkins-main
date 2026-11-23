@@ -31,7 +31,7 @@ pipeline {
         stage("Load groovy configuration"){
             steps {
                 script {
-                    k8sdeploy = load 'vars/deployToSameK8s.groovy'
+                    k8sdeploy = load 'vars/k8sDeploy.groovy'
                 }
             }
 

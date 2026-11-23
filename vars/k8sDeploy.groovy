@@ -1,4 +1,4 @@
-def deployToK8s(Map config = [:]) {
+def deployToSameK8s(Map config = [:]) {
     String namespace    = config.namespace
     String manifestPath = config.manifestPath
     String imageRef     = config.imageRef
