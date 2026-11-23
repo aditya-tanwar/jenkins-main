@@ -127,12 +127,22 @@ pipeline {
         stage('SLSA Provenance & Cosign Sign') {
             steps {
                 withCredentials([
+                    usernamePassword(
+                        credentialsId: "${DOCKERHUB_CREDENTIALS}",
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_TOKEN'
+                    ),
                     file(credentialsId: 'cosign-private-key', variable: 'COSIGN_KEY'),
                     string(credentialsId: 'cosign-password', variable: 'COSIGN_PASSWORD')
                 ]) {
                     sh '''
                         set -euo pipefail
                         export DOCKER_CONFIG="$(dirname "$REGISTRY_AUTH_FILE")"
+
+                        printf '%s' "$DOCKER_TOKEN" | cosign login \
+                            --username "$DOCKER_USER" \
+                            --password-stdin \
+                            docker.io
 
                         cat <<EOF > "${SLSA_FILE}"
 {
@@ -208,6 +218,5 @@ EOF
                 rm -rf .docker rendered-sample-app.yaml "${DIGEST_FILE}" "${IMAGE_ARCHIVE}"
             '''
         }
-
     }
 }
