@@ -28,6 +28,15 @@ pipeline {
             }
         }
 
+        stage("Load groovy configuration"){
+            steps {
+                script {
+                    k8sdeploy = load 'vars/deployToSameK8s.groovy'
+                }
+            }
+
+        }
+
         stage('Build & Security Scan') {
             steps {
                 podmanBuildAndScan(
@@ -58,7 +67,7 @@ pipeline {
 
         stage('Deploy to K8s') {
             steps {
-                deployToK8s(
+                k8sdeploy.deployToSameK8s(
                     namespace: 'demo-app',
                     manifestPath: 'k8s/sample-app.yaml',
                     imageRef: env.IMAGE_REF,
