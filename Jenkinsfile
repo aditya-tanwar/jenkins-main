@@ -187,7 +187,7 @@ EOF
                         cosign attest --yes \
                           --key "${COSIGN_KEY}" \
                           --predicate "${SLSA_FILE}" \
-                          --type slsaprovenance \
+                          --type slsaprovenance1 \
                           "${IMAGE_REF}"
                     '''
                 }
