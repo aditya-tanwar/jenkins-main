@@ -67,12 +67,14 @@ pipeline {
 
         stage('Deploy to K8s') {
             steps {
+                script{
                 k8sdeploy.deployToSameK8s(
                     namespace: 'demo-app',
                     manifestPath: 'k8s/sample-app.yaml',
                     imageRef: env.IMAGE_REF,
                     deployment: 'sample-app'
                 )
+                }
             }
         }
     }
