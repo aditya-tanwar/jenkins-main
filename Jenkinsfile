@@ -204,18 +204,10 @@ EOF
             archiveArtifacts artifacts: "${SBOM_FILE},${SLSA_FILE}", allowEmptyArchive: true
         }
         cleanup {
-            script {
-                ['.docker', 'rendered-sample-app.yaml', env.DIGEST_FILE, env.IMAGE_ARCHIVE].each { relPath ->
-                    def target = new File("${env.WORKSPACE}/${relPath}")
-                    if (target.exists()) {
-                        if (target.isDirectory()) {
-                            target.deleteDir()
-                        } else {
-                            target.delete()
-                        }
-                    }
-                }
-            }
+            sh '''
+                rm -rf .docker rendered-sample-app.yaml "${DIGEST_FILE}" "${IMAGE_ARCHIVE}"
+            '''
         }
+
     }
 }
