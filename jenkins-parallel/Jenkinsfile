@@ -1,0 +1,99 @@
+pipeline {
+    agent { label 'devops-agent' }
+
+
+    options {
+        timestamps()
+        // Abort all parallel branches immediately if any single sub-stage fails
+        parallelsAlwaysFailFast()
+    }
+
+    stages {
+        stage('Setup') {
+            steps {
+                echo 'Preparing shared setup before parallel execution...'
+            }
+        }
+
+        stage('Run Parallel Tracks') {
+            parallel {
+                stage('Track A') {
+                    stages {
+                        stage('Task A1 - Build') {
+                            steps {
+                                echo 'Running A1...'
+                                sleep 2
+                            }
+                        }
+                        stage('Task A2 - Scan') {
+                            steps {
+                                echo 'Running A2...'
+                                sleep 2
+                            }
+                        }
+                        stage('Task A3 - Deploy') {
+                            steps {
+                                echo 'Running A3...'
+                                sleep 2
+                            }
+                        }
+                    }
+                }
+
+                stage('Track B') {
+                    stages {
+                        stage('Task B1 - Build') {
+                            steps {
+                                echo 'Running B1...'
+                                sleep 3
+                            }
+                        }
+                        stage('Task B2 - Scan') {
+                            steps {
+                                echo 'Running B2...'
+                                sleep 3
+                            }
+                        }
+                        stage('Task B3 - Deploy') {
+                            steps {
+                                echo 'Running B3...'
+                                sleep 2
+                            }
+                        }
+                    }
+                }
+
+                stage('Track C') {
+                    // Optional: Run Track C on a separate agent pod
+                    agent { label 'devops-agent' }
+                    stages {
+                        stage('Task C1 - Build') {
+                            steps {
+                                echo 'Running C1...'
+                                sleep 2
+                            }
+                        }
+                        stage('Task C2 - Scan') {
+                            steps {
+                                echo 'Running C2...'
+                                sleep 4
+                            }
+                        }
+                        stage('Task C3 - Deploy') {
+                            steps {
+                                echo 'Running C3...'
+                                sleep 2
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Summary') {
+            steps {
+                echo 'All tracks (A, B, and C) completed their sub-stages!'
+            }
+        }
+    }
+}
