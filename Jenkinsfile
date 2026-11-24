@@ -1,4 +1,4 @@
-@Library('jenkins-sharedlib') _
+@Library('jenkins-sharedlib') _ // to load the sharedlib repo (seperate repo -> configured in manage jenkins > system)
 
 pipeline {
     agent { label 'devops-agent' }
@@ -28,7 +28,7 @@ pipeline {
             }
         }
 
-        stage("Load groovy configuration"){
+        stage("Load groovy configuration"){ // to load the local groovy from the same repo
             steps {
                 script {
                     k8sdeploy = load 'vars/k8sDeploy.groovy'
