@@ -64,7 +64,6 @@ pipeline {
 
                 stage('Track C') {
                     // Optional: Run Track C on a separate agent pod
-                    agent { label 'devops-agent' }
                     stages {
                         stage('Task C1 - Build') {
                             steps {
