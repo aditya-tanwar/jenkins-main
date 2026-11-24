@@ -1,6 +1,5 @@
 pipeline {
-    agent { label 'devops-agent' }
-
+    agent any
 
     options {
         timestamps()
